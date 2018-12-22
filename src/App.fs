@@ -347,10 +347,16 @@ let view (model:Model) dispatch =
                 ][]    
         ]
 
-      
+let withReactSynchronous placeholderId (program:Elmish.Program<_,_,_,_>) =
+        let setState model dispatch =
+            Fable.Import.ReactDom.render(
+                program.view model dispatch,
+                Fable.Import.Browser.document.getElementById(placeholderId)
+            )
+
+        { program with setState = setState }      
 
 // App
 Program.mkProgram initialState update view
-|> Program.withConsoleTrace
-|> Program.withReact "elmish-app"
+|> withReactSynchronous "elmish-app"
 |> Program.run
