@@ -179,6 +179,7 @@ let view (model : Model) dispatch =
                p.y <- y
                let x = p.matrixTransform ((s?getScreenCTM()?inverse()))
                x.x, x.y)
+    
     svg [ ViewBox "0 0 950 950"
           SVG.Width "100vh"
           Style [ Custom("userSelect", "none") ]
@@ -188,7 +189,11 @@ let view (model : Model) dispatch =
           OnMouseMove
               (fun e ->
               toSVGPoint e.clientX e.clientY |> Option.iter (Moved >> dispatch))
-          OnMouseUp(fun _ -> dispatch EndMoving) ]
+          OnTouchMove  (fun e ->
+              toSVGPoint e.touches.[0.].clientX e.touches.[0.].clientY |> Option.iter (Moved >> dispatch))
+          OnMouseUp(fun _ -> dispatch EndMoving)
+          OnTouchCancel(fun _ -> dispatch EndMoving)
+          OnTouchEnd(fun _ -> dispatch EndMoving) ]
         [ yield rect [ SVG.Width "100%"
                        SVG.Height "100%"
                        SVG.Fill "lightgrey" ] []
@@ -270,7 +275,12 @@ let view (model : Model) dispatch =
                                   SVG.X(sprintf "%ipx" x)
                                   SVG.Y(sprintf "%ipx" y)
                                   SVG.Fill "transparent"
-
+                                  OnTouchStart
+                                      (fun e ->
+                                      toSVGPoint e.touches.[0.].clientX e.touches.[0.].clientY
+                                      |> Option.iter
+                                             (fun (x, y) ->
+                                             dispatch (StartMoving(x, y, cm))))
                                   OnMouseDown
                                       (fun e ->
                                       toSVGPoint e.clientX e.clientY
