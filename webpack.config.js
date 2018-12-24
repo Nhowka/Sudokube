@@ -12,8 +12,11 @@ module.exports = {
         filename: "bundle.js",
     },
     devServer: {
+        
+        inline: true,
         contentBase: "./public",
         port: 8080,
+        disableHostCheck: true
     },
     module: {
         rules: [{
