@@ -190,6 +190,7 @@ let view (model : Model) dispatch =
               (fun e ->
               toSVGPoint e.clientX e.clientY |> Option.iter (Moved >> dispatch))
           OnTouchMove  (fun e ->
+              e.preventDefault()
               toSVGPoint e.touches.[0.].clientX e.touches.[0.].clientY |> Option.iter (Moved >> dispatch))
           OnMouseUp(fun _ -> dispatch EndMoving)
           OnTouchCancel(fun _ -> dispatch EndMoving)
