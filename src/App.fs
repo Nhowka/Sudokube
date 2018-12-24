@@ -59,7 +59,7 @@ let initialState() =
            "#ff99ff", 450, 250,
            (fun x y ->
            { Horizontal = (Blue y), false
-             Vertical = (Red x), false })
+             Vertical = (Red (3-x)), false })
            "#99ffff", 250, 450,
            (fun x y ->
            { Horizontal = (Red(3 - y)), true
