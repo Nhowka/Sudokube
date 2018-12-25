@@ -157,7 +157,7 @@ let paintCell { Content = n; Position = (x, y); Color = cl; Face = f } =
              SVG.Fill cl ] []
       text [ SVG.Width "50px"
              SVG.Height "50px"
-             SVG.X(sprintf "%ipx" (x + 10))
+             SVG.X(sprintf "%ipx" (x + 20))
              SVG.Y(sprintf "%ipx" (y + 30)) ] [ //         [str (string f + "," + string a + ","+string b)]
                                                 str (match n with
                                                      | 10 -> "A"
@@ -166,8 +166,12 @@ let paintCell { Content = n; Position = (x, y); Color = cl; Face = f } =
                                                      | 13 -> "D"
                                                      | 14 -> "E"
                                                      | 15 -> "F"
-                                                     | n -> string n) ] ]
-
+                                                     | n -> string n) ]
+       ]
+let border n : string =
+              sprintf
+                  "M 450 %i a %i,%i 0 0 1 %i,%i v 200 a %i,%i 0 0 1 -%i,%i h -200 a %i,%i 0 0 1 -%i,-%i v -200 a %i,%i 0 0 1 %i,-%i Z"
+                  (250 - n) n n n n n n n n n n n n n n n n
 let view (model : Model) dispatch =
     let mutable rSVG : B.SVGElement option = None
 
@@ -193,20 +197,65 @@ let view (model : Model) dispatch =
               e.preventDefault()
               toSVGPoint e.touches.[0.].clientX e.touches.[0.].clientY |> Option.iter (Moved >> dispatch))
           OnMouseUp(fun _ -> dispatch EndMoving)
-          OnTouchCancel(fun _ -> dispatch EndMoving)
-          OnTouchEnd(fun _ -> dispatch EndMoving) ]
+          OnTouchCancel(fun e -> 
+            e.preventDefault()
+            dispatch EndMoving)
+          OnTouchEnd(fun e -> 
+            e.preventDefault()
+            dispatch EndMoving) ]
         [ yield rect [ SVG.Width "100%"
                        SVG.Height "100%"
                        SVG.Fill "lightgrey" ] []
+          yield rect [ 
+             SVG.Width "220px"
+             SVG.Height "180px"
+             SVG.X "670px" 
+             SVG.Y "40px" 
+             SVG.Fill "white"
+             SVG.Stroke "black" ] []
+          yield text [
+             SVG.Width "220px"
+             SVG.Height "180px"
+             SVG.X "670px" 
+             SVG.Y "40px"
+             SVG.FontSize "30px"   ] [
+                 tspan [ 
+                     SVG.Dx "1em"
+                     SVG.Dy "1.2em"] [str "Duplicates:"]                 
+                 tspan [ 
+                     SVG.X "695px"
+                     SVG.Dy "30px"
+                     ] [str "• "]                 
+                 tspan [ 
+                     SVG.X "710px"] [str " Face group"]
+                 tspan [ 
+                     SVG.X "695px"
+                     SVG.Dy "30px"
+                     SVG.Fill "red"
+                     ] [str "• "] 
+                 tspan [ 
+                     SVG.X "710px"] [str " Red group"]
+                 tspan [ 
+                     SVG.X "695px"
+                     SVG.Dy "30px"
+                     SVG.Fill "green"
+                     ] [str "• "]     
+                 tspan [ 
+                     SVG.X "710px"] [str " Green group"]
+                 tspan [ 
+                     SVG.X "695px"
+                     SVG.Dy "30px"
+                     SVG.Fill "blue"
+                     ] [str "• "] 
+                 tspan [ 
+                     SVG.X "710px"] [str " Blue group"]
+             ]          
           for face in model.Cells do
               for row in face do
                   for cell in row do
                       yield! paintCell cell
 
-          let border n : string =
-              sprintf
-                  "a %i,%i 0 0 1 %i,%i v 200 a %i,%i 0 0 1 -%i,%i h -200 a %i,%i 0 0 1 -%i,-%i v -200 a %i,%i 0 0 1 %i,-%i Z"
-                  n n n n n n n n n n n n n n n n
+          
           yield path
                     [ SVG.Stroke "red"
                       SVG.StrokeWidth "3px"
@@ -214,7 +263,7 @@ let view (model : Model) dispatch =
 
                       SVG.D
                       <| sprintf
-                             "M 450 50 %s M 450 100 %s M 450 150 %s M 450 200 %s"
+                             "%s %s %s %s"
                              (border 200) (border 150) (border 100) (border 50) ]
                     []
           yield path [ SVG.Stroke "blue"
@@ -267,8 +316,30 @@ let view (model : Model) dispatch =
                     a 50,50 0 0 0 50,50
                     h 400
                     """ ] []
+          let paintErrors color offx offy cells =
+              [
+                let dups =
+                    cells
+                    |> Seq.groupBy (fun e -> e.Content)
+                    |> Seq.filter (snd >> Seq.length >> ((<) 1))
+                    |> Seq.collect snd
+                for {Position = (x,y)} in dups do
+                    yield
+                        circle [
+                            SVG.Cx (x+offx)
+                            SVG.Cy (y+offy)
+                            SVG.R 4
+                            SVG.Fill color][]]
+          for c in 0..3 do            
+            yield! reds.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "red" 10 10 
+            yield! greens.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "green" 10 40 
+            yield! blues.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "blue" 40 10 
+
           for face in model.Cells do
-              for row in face do
+            yield! face |> Seq.collect id |> paintErrors "black" 40 40
+
+         // for face in model.Cells do
+            for row in face do
                   for { Position = (x, y); Move = cm } in row do
                       yield rect
                                 [ SVG.Width "50px"
