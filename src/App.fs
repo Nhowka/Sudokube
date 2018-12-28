@@ -172,7 +172,7 @@ let paintCell { Content = n; Position = (x, y) as p; Color = cl; Face = f } toAn
       text [ SVG.Width "50px"
              SVG.Height "50px"
              SVG.TextAnchor "middle"
-             SVG.Custom ("align-baseline","middle")
+             SVG.Custom ("alignment-baseline","middle")
              SVG.X(sprintf "%ipx" (x + 25))
              SVG.Y(sprintf "%ipx" (y + 25)) ]
                 [ match displacements |> Map.tryFind p with
