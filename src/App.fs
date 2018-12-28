@@ -1,5 +1,7 @@
 module Sudokube
 
+
+
 open System
 open Fable.Import
 open Fable.Core.JsInterop
@@ -10,7 +12,10 @@ open Elmish.React
 
 module B = Fable.Import.Browser
 
+let inline animateMotion props children = svgEl "animateMotion" props children
+
 type SVG = SVGAttr
+
 
 type Movement =
     | Started of float * float
@@ -35,12 +40,15 @@ type Cell =
 
 type Model =
     { Cells : Cell [] [] []
-      Move : (CellMovement * Movement) option }
+      Move : (CellMovement * Movement) option
+      Displacements : Map<(int*int),(int*int)>
+      ToAnimate: bool }
 
 type Messages =
     | StartMoving of float * float * CellMovement
     | Moved of float * float
     | EndMoving
+    | SetAnimating of bool
 
 let initialState() =
     let colors =
@@ -69,6 +77,8 @@ let initialState() =
            { Horizontal = (Green(3 - y)), false
              Vertical = (Blue(3 - x)), false }) |]
     { Move = None
+      ToAnimate = false
+      Displacements = Map.empty
       Cells = Array.init 6 (fun z -> Array.init 4 (fun x -> Array.init 4 (fun y ->
                                                                 let color, bx,by, m = colors.[z]
                                                                 { Content =
@@ -116,14 +126,22 @@ let update msg (model : Model) =
             if d then List.rev
             else id
         match r
-              |> Array.map (fun (f, j, k) -> model.Cells.[f].[j].[k].Content)
+              |> Array.map (fun (f, j, k) ->
+                 let c = model.Cells.[f].[j].[k]
+                 c.Content, c.Position)
               |> Array.toList
               |> f with
         | [] -> []
         | a :: b -> b @ [ a ] |> f
-        |> List.iteri (fun i e ->
-               let (f, j, k) = r.[i] in model.Cells.[f].[j].[k].Content <- e)
+        |> List.mapi (fun i (e,p) ->
+               let (f, j, k) = r.[i]
+               let d = model.Cells.[f].[j].[k]
+               d.Content <- e
+               d.Position, p)
+        |> Map.ofList
     match msg with
+    | SetAnimating t ->
+        { model with ToAnimate = t}, Cmd.none
     | StartMoving(x, y, cm) ->
         { model with Move = Some(cm, (Started(x, y))) }, Cmd.none
     | EndMoving -> { model with Move = None }, Cmd.none
@@ -131,25 +149,21 @@ let update msg (model : Model) =
         match model.Move with
         | Some(cm, (Started(x, y))) ->
             if (abs (x - x') >= 50.) then
-                cm.Horizontal ||> move (x' > x)
-                { model with Move = Some(cm, Horizontal x') }, Cmd.none
+                { model with ToAnimate = true; Move = Some(cm, Horizontal x'); Displacements = cm.Horizontal ||> move (x' > x) }, Cmd.none
             elif (abs (y - y') >= 50.) then
-                cm.Vertical ||> move (y' > y)
-                { model with Move = Some(cm, Vertical y') }, Cmd.none
+                { model with ToAnimate = true; Move = Some(cm, Vertical y') ; Displacements = cm.Vertical ||> move (y' > y) }, Cmd.none
             else model, Cmd.none
         | Some(cm, Horizontal x) ->
             if (abs (x - x') >= 50.) then
-                cm.Horizontal ||> move (x' > x)
-                { model with Move = Some(cm, Horizontal x') }, Cmd.none
+                { model with ToAnimate = true; Move = Some(cm, Horizontal x') ; Displacements = cm.Horizontal ||> move (x' > x) }, Cmd.none
             else model, Cmd.none
         | Some(cm, Vertical y) ->
             if (abs (y - y') >= 50.) then
-                cm.Vertical ||> move (y' > y)
-                { model with Move = Some(cm, Vertical y') }, Cmd.none
+                { model with ToAnimate = true; Move = Some(cm, Vertical y'); Displacements = cm.Vertical ||> move (y' > y) }, Cmd.none
             else model, Cmd.none
         | None -> model, Cmd.none
 
-let paintCell { Content = n; Position = (x, y); Color = cl; Face = f } =
+let paintCell { Content = n; Position = (x, y) as p; Color = cl; Face = f } toAnimate dispatch displacements =
     [ rect [ SVG.Width "50px"
              SVG.Height "50px"
              SVG.X(sprintf "%ipx" x)
@@ -157,33 +171,52 @@ let paintCell { Content = n; Position = (x, y); Color = cl; Face = f } =
              SVG.Fill cl ] []
       text [ SVG.Width "50px"
              SVG.Height "50px"
-             SVG.X(sprintf "%ipx" (x + 20))
-             SVG.Y(sprintf "%ipx" (y + 30)) ] [ //         [str (string f + "," + string a + ","+string b)]
-                                                str (match n with
-                                                     | 10 -> "A"
-                                                     | 11 -> "B"
-                                                     | 12 -> "C"
-                                                     | 13 -> "D"
-                                                     | 14 -> "E"
-                                                     | 15 -> "F"
-                                                     | n -> string n) ]
+             SVG.TextAnchor "middle"
+             SVG.Custom ("align-baseline","middle")
+             SVG.X(sprintf "%ipx" (x + 25))
+             SVG.Y(sprintf "%ipx" (y + 25)) ]
+                [ match displacements |> Map.tryFind p with
+                  | Some (x',y') ->
+                        yield animateMotion [
+                            Ref (fun e ->
+                                if toAnimate && e |> isNull |> not then
+                                    e?beginElement()
+                                    dispatch (SetAnimating false)
+                                )
+                            SVG.Custom ("onEnded", fun _ -> dispatch (SetAnimating true))
+                            SVG.Custom ("dur", "250ms")
+                            SVG.Custom ("begin", 0)
+                            SVG.Custom("from",sprintf "%i,%i" (x'-x) (y'-y))
+                            SVG.Custom("to",sprintf "%i,%i" 0 0)
+
+                            SVG.Custom("repeatCount", "1")][]
+                  | None -> ()
+                  yield
+                   str (match n with
+                        | 10 -> "A"
+                        | 11 -> "B"
+                        | 12 -> "C"
+                        | 13 -> "D"
+                        | 14 -> "E"
+                        | 15 -> "F"
+                        | n -> string n) ]
        ]
 let border n : string =
               sprintf
                   "M 450 %i a %i,%i 0 0 1 %i,%i v 200 a %i,%i 0 0 1 -%i,%i h -200 a %i,%i 0 0 1 -%i,-%i v -200 a %i,%i 0 0 1 %i,-%i Z"
                   (250 - n) n n n n n n n n n n n n n n n n
 let view (model : Model) dispatch =
-    let mutable rSVG : B.SVGElement option = None
+    let mutable rSVG : B.SVGSVGElement option = None
 
     let toSVGPoint x y =
         rSVG
         |> Option.map (fun s ->
-               let p : B.SVGPoint = s?createSVGPoint ()
+               let p : B.SVGPoint = s.createSVGPoint()
                p.x <- x
                p.y <- y
-               let x = p.matrixTransform ((s?getScreenCTM()?inverse()))
+               let x = p.matrixTransform ((s.getScreenCTM().inverse()))
                x.x, x.y)
-    
+
     svg [ ViewBox "0 0 950 950"
           SVG.Width "100vh"
           Style [ Custom("userSelect", "none") ]
@@ -197,65 +230,65 @@ let view (model : Model) dispatch =
               e.preventDefault()
               toSVGPoint e.touches.[0.].clientX e.touches.[0.].clientY |> Option.iter (Moved >> dispatch))
           OnMouseUp(fun _ -> dispatch EndMoving)
-          OnTouchCancel(fun e -> 
+          OnTouchCancel(fun e ->
             e.preventDefault()
             dispatch EndMoving)
-          OnTouchEnd(fun e -> 
+          OnTouchEnd(fun e ->
             e.preventDefault()
             dispatch EndMoving) ]
         [ yield rect [ SVG.Width "100%"
                        SVG.Height "100%"
                        SVG.Fill "lightgrey" ] []
-          yield rect [ 
+          yield rect [
              SVG.Width "220px"
              SVG.Height "180px"
-             SVG.X "670px" 
-             SVG.Y "40px" 
+             SVG.X "670px"
+             SVG.Y "40px"
              SVG.Fill "white"
              SVG.Stroke "black" ] []
           yield text [
              SVG.Width "220px"
              SVG.Height "180px"
-             SVG.X "670px" 
+             SVG.X "670px"
              SVG.Y "40px"
              SVG.FontSize "30px"   ] [
-                 tspan [ 
+                 tspan [
                      SVG.Dx "1em"
-                     SVG.Dy "1.2em"] [str "Duplicates:"]                 
-                 tspan [ 
+                     SVG.Dy "1.2em"] [str "Duplicates:"]
+                 tspan [
                      SVG.X "695px"
                      SVG.Dy "30px"
-                     ] [str "• "]                 
-                 tspan [ 
+                     ] [str "• "]
+                 tspan [
                      SVG.X "710px"] [str " Face group"]
-                 tspan [ 
+                 tspan [
                      SVG.X "695px"
                      SVG.Dy "30px"
                      SVG.Fill "red"
-                     ] [str "• "] 
-                 tspan [ 
+                     ] [str "• "]
+                 tspan [
                      SVG.X "710px"] [str " Red group"]
-                 tspan [ 
+                 tspan [
                      SVG.X "695px"
                      SVG.Dy "30px"
                      SVG.Fill "green"
-                     ] [str "• "]     
-                 tspan [ 
+                     ] [str "• "]
+                 tspan [
                      SVG.X "710px"] [str " Green group"]
-                 tspan [ 
+                 tspan [
                      SVG.X "695px"
                      SVG.Dy "30px"
                      SVG.Fill "blue"
-                     ] [str "• "] 
-                 tspan [ 
+                     ] [str "• "]
+                 tspan [
                      SVG.X "710px"] [str " Blue group"]
-             ]          
+             ]
           for face in model.Cells do
               for row in face do
                   for cell in row do
-                      yield! paintCell cell
+                      yield! paintCell cell model.ToAnimate dispatch model.Displacements
 
-          
+
           yield path
                     [ SVG.Stroke "red"
                       SVG.StrokeWidth "3px"
@@ -330,10 +363,10 @@ let view (model : Model) dispatch =
                             SVG.Cy (y+offy)
                             SVG.R 4
                             SVG.Fill color][]]
-          for c in 0..3 do            
-            yield! reds.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "red" 10 10 
-            yield! greens.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "green" 10 40 
-            yield! blues.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "blue" 40 10 
+          for c in 0..3 do
+            yield! reds.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "red" 10 10
+            yield! greens.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "green" 10 40
+            yield! blues.[c] |> Array.map(fun (i,j,k) -> model.Cells.[i].[j].[k]) |> paintErrors "blue" 40 10
 
           for face in model.Cells do
             yield! face |> Seq.collect id |> paintErrors "black" 40 40
